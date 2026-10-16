@@ -1,0 +1,20 @@
+name: vrlizate_avatar
+description: Avatar appearance, VR preferences and an embeddable editor with host-owned identity and persistence.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.10.8
+  flutter: '>=3.47.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
