@@ -2,8 +2,21 @@
 /// authentication, renderer, tracking and persistence implementations.
 library;
 
-export 'src/model/vr_avatar_pose.dart';
-export 'src/model/vr_avatar_profile.dart';
-export 'src/ui/vr_avatar_editor.dart';
-export 'src/ui/vr_avatar_labels.dart';
-export 'src/ui/vr_avatar_preview.dart';
+export 'domain/models/vr_avatar_appearance.dart';
+export 'domain/models/vr_avatar_emote_state.dart';
+export 'domain/models/vr_avatar_pose.dart';
+export 'domain/models/vr_avatar_preferences.dart';
+export 'domain/models/vr_avatar_profile.dart';
+export 'domain/models/vr_shoulder_kinematics.dart';
+export 'domain/services/vr_avatar_preset_catalog.dart';
+export 'domain/services/vr_avatar_share_code_codec.dart';
+export 'ui/vr_avatar_editor.dart';
+export 'ui/vr_avatar_labels.dart';
+export 'ui/vr_avatar_painter.dart';
+export 'ui/vr_avatar_preview.dart';
+export 'utils/constants/vr_avatar_constants.dart';
+export 'utils/constants/vr_avatar_translation_constants.dart';
+export 'utils/enums/vr_avatar_emote.dart';
+export 'utils/enums/vr_avatar_pattern.dart';
+export 'utils/enums/vr_avatar_species.dart';
+export 'utils/enums/vr_avatar_style.dart';

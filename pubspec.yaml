@@ -1,7 +1,8 @@
 name: vrlizate_avatar
-description: Avatar appearance, VR preferences and an embeddable editor with host-owned identity and persistence.
-version: 0.1.0
-publish_to: none
+description: Avatar appearance, VR preferences, social emotes, presets, share codes, and an embeddable editor with host-owned identity and persistence.
+version: 1.0.0
+homepage: https://github.com/Open-Neom/vrlizate_avatar
+repository: https://github.com/Open-Neom/vrlizate_avatar
 
 environment:
   sdk: ^3.10.8
