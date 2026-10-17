@@ -2,6 +2,7 @@
 /// authentication, renderer, tracking and persistence implementations.
 library;
 
+export 'src/model/vr_avatar_pose.dart';
 export 'src/model/vr_avatar_profile.dart';
 export 'src/ui/vr_avatar_editor.dart';
 export 'src/ui/vr_avatar_labels.dart';
