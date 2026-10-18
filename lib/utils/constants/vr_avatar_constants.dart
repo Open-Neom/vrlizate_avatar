@@ -66,4 +66,32 @@ abstract final class VrAvatarConstants {
   static const String presetCoralAxolotl = 'coral-axolotl';
   static const String presetMossSprout = 'moss-sprout';
   static const String defaultPresetProfileId = 'preset-profile';
+
+  // Tri-camera + Ultrasonic body tracking & anthropometry constants
+  static const double defaultSpeedOfSoundZeroCelsius = 331.3;
+  static const double speedOfSoundTempCoeff = 0.606;
+  static const double defaultAmbientTemperatureCelsius = 20.0;
+  static const double defaultAudioSampleRateHz = 48000.0;
+  static const double joystickChirpStartHz = 18500.0;
+  static const double joystickChirpEndHz = 20500.0;
+  static const double visorChirpStartHz = 21500.0;
+  static const double visorChirpEndHz = 19500.0;
+  static const double defaultChirpDurationSeconds = 0.010;
+  static const double minValidAcousticDistanceMeters = 0.12;
+  static const double maxValidAcousticDistanceMeters = 1.65;
+
+  // Winter's Biomechanical Anthropometry ratios (fraction of total stature H_user)
+  static const double defaultUserStatureMeters = 1.72;
+  static const double eyeToCrownOffsetMeters = 0.11;
+  static const double shoulderWidthToStatureRatio = 0.259;
+  static const double upperArmToStatureRatio = 0.186;
+  static const double forearmToStatureRatio = 0.146;
+  static const double legLengthToStatureRatio = 0.530;
+  static const double defaultVisorPhysicalWidthMeters = 0.155;
+  static const double defaultCameraVerticalFovRadians = 1.0471975512; // 60 deg
+  static const double defaultCameraHorizontalFovRadians = 1.308996939; // 75 deg
+  static const double defaultStandingStanceDepthMeters = 0.34;
+  static const double seatedHeightRatioThreshold = 0.76;
+  static const double crouchingHeightRatioThreshold = 0.88;
+  static const double jumpHeightDeltaThresholdMeters = 0.055;
 }
