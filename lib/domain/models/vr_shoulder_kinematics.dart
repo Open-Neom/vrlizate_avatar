@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+import '../../utils/constants/vr_avatar_constants.dart';
+
 /// Shoulder girdle & arm rotation rules from Lemo-Opuscar `TECHNIQUE.md` §10:
 ///
 /// 1. Order shoulder rotation as **abduction first, then flexion** so raised
@@ -13,7 +15,9 @@ abstract final class VrShoulderKinematics {
     required double abduction,
   }) {
     final combined = math.sqrt(flexion * flexion + abduction * abduction);
-    return (combined / (math.pi * 0.75)).clamp(0.0, 1.0);
+    return (combined /
+            (math.pi * VrAvatarConstants.armLiftMaxCombinedPiFraction))
+        .clamp(0.0, 1.0);
   }
 
   /// Vertical clavicle lift in meters scaled by avatar [heightMeters].
@@ -23,7 +27,7 @@ abstract final class VrShoulderKinematics {
     double heightMeters = 1.0,
   }) {
     return armLiftFactor(flexion: flexion, abduction: abduction) *
-        0.024 *
+        VrAvatarConstants.clavicleRiseScaleMeters *
         heightMeters;
   }
 
@@ -34,7 +38,7 @@ abstract final class VrShoulderKinematics {
     double heightMeters = 1.0,
   }) {
     return armLiftFactor(flexion: flexion, abduction: abduction) *
-        0.014 *
+        VrAvatarConstants.clavicleForwardScaleMeters *
         heightMeters;
   }
 }

@@ -7,18 +7,6 @@ import '../models/vr_ultrasonic_range_sample.dart';
 /// Acoustic & near-ultrasonic Time-of-Flight (TW-ToF / BeepBeep protocol) and
 /// FMCW chirp matched-filter solver for ranging between the Visor smartphone
 /// and the Joystick smartphone.
-///
-/// Why TW-ToF (BeepBeep) works across two independent smartphones without
-/// hardware clock synchronization:
-/// 1. Smartphone A (Joystick) emits an up-chirp ($18.5\text{ kHz} \to 20.5\text{ kHz}$)
-///    and records its own speaker-to-mic arrival sample index $n_{AA}$.
-/// 2. Smartphone B (Visor) records the arrival of A's chirp at sample index $n_{AB}$,
-///    and after a short turnaround emits a down-chirp ($21.5\text{ kHz} \to 19.5\text{ kHz}$),
-///    recording its own speaker-to-mic index $n_{BB}$.
-/// 3. Smartphone A records the arrival of B's down-chirp at sample index $n_{BA}$.
-/// 4. The acoustic round-trip propagation time is completely independent of clock
-///    offset or WebSocket network latency:
-///    $$t_{\text{ToF}} = \frac{(n_{BA} - n_{AA}) - (n_{BB} - n_{AB})}{2 \cdot f_s}$$
 class VrUltrasonicTofSolver {
   const VrUltrasonicTofSolver({
     this.sampleRateHz = VrAvatarConstants.defaultAudioSampleRateHz,
@@ -52,7 +40,10 @@ class VrUltrasonicTofSolver {
     double endFreqHz = VrAvatarConstants.joystickChirpEndHz,
     double durationSeconds = VrAvatarConstants.defaultChirpDurationSeconds,
   }) {
-    final numSamples = (durationSeconds * sampleRateHz).round().clamp(16, 16384);
+    final numSamples = (durationSeconds * sampleRateHz).round().clamp(
+      VrAvatarConstants.minChirpSamples,
+      VrAvatarConstants.maxChirpSamples,
+    );
     final out = Float64List(numSamples);
     final sweepRate = (endFreqHz - startFreqHz) / durationSeconds;
     for (var i = 0; i < numSamples; i++) {
@@ -108,19 +99,22 @@ class VrUltrasonicTofSolver {
       final yPlus = corr[bestLag + 1];
       final denom = yMinus - 2.0 * yZero + yPlus;
       if (denom.abs() > 1e-12) {
-        fractionalOffset = (0.5 * (yMinus - yPlus) / denom).clamp(-0.5, 0.5);
+        fractionalOffset = (0.5 * (yMinus - yPlus) / denom).clamp(
+          -VrAvatarConstants.parabolicMaxFractionalOffset,
+          VrAvatarConstants.parabolicMaxFractionalOffset,
+        );
       }
     }
 
-    final meanNoise =
-        (sumAbs - bestVal) / math.max(1, maxLag);
-    final snrRatio = bestVal / math.max(1e-9, meanNoise);
-    final snrDb = 20.0 * (math.log(math.max(1.0, snrRatio)) / math.ln10);
+    final meanNoise = (sumAbs - bestVal) / math.max(1, maxLag);
+    final snrRatio =
+        bestVal /
+        math.max(VrAvatarConstants.minNoiseFloorEpsilon, meanNoise);
+    final snrDb =
+        VrAvatarConstants.decibelAmplitudeFactor *
+        (math.log(math.max(1.0, snrRatio)) / math.ln10);
 
-    return (
-      sampleIndex: bestLag + fractionalOffset,
-      snrDb: snrDb,
-    );
+    return (sampleIndex: bestLag + fractionalOffset, snrDb: snrDb);
   }
 
   /// Solves the clock-offset-free Two-Way Time-of-Flight (BeepBeep) distance
@@ -136,7 +130,7 @@ class VrUltrasonicTofSolver {
     required double visorSelfArrivalSample,
     double? previousDistanceMeters,
     double? dtSeconds,
-    double snrDb = 24.0,
+    double snrDb = VrAvatarConstants.defaultUltrasonicSnrDb,
   }) {
     final deltaJoystickSamples =
         joystickRemoteArrivalSample - joystickSelfArrivalSample;
@@ -147,9 +141,11 @@ class VrUltrasonicTofSolver {
     );
     final oneWaySeconds = (roundTripSamples * 0.5) / sampleRateHz;
     final c = speedOfSoundMetersPerSec(ambientTemperatureCelsius);
-    final rawDistance =
-        oneWaySeconds * c + hardwareSeparationOffsetMeters;
-    final clampedDistance = rawDistance.clamp(0.05, 5.0);
+    final rawDistance = oneWaySeconds * c + hardwareSeparationOffsetMeters;
+    final clampedDistance = rawDistance.clamp(
+      VrAvatarConstants.minSolvedAcousticDistanceMeters,
+      VrAvatarConstants.maxSolvedAcousticDistanceMeters,
+    );
 
     var radialVelocity = 0.0;
     if (previousDistanceMeters != null &&
@@ -158,12 +154,18 @@ class VrUltrasonicTofSolver {
       radialVelocity = (clampedDistance - previousDistanceMeters) / dtSeconds;
     }
 
-    final confidence = ((snrDb - 6.0) / 18.0).clamp(0.0, 1.0);
+    final confidence =
+        ((snrDb - VrAvatarConstants.snrMinConfidenceDb) /
+                VrAvatarConstants.snrSpanConfidenceDb)
+            .clamp(0.0, 1.0);
 
     return VrUltrasonicRangeSample(
       distanceMeters: clampedDistance,
       radialVelocityMetersPerSec: radialVelocity,
-      roundTripMicros: ((roundTripSamples / sampleRateHz) * 1e6).round(),
+      roundTripMicros:
+          ((roundTripSamples / sampleRateHz) *
+                  VrAvatarConstants.microsecondsPerSecond)
+              .round(),
       signalToNoiseDb: snrDb,
       ambientTemperatureCelsius: ambientTemperatureCelsius,
       confidence: confidence,

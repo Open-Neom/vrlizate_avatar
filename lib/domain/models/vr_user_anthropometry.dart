@@ -22,7 +22,10 @@ class VrUserAnthropometry {
     bool isCalibrated = false,
     double calibrationConfidence = 0.0,
   }) {
-    final clampedStature = statureMeters.clamp(1.10, 2.30);
+    final clampedStature = statureMeters.clamp(
+      VrAvatarConstants.minValidStatureMeters,
+      VrAvatarConstants.maxValidStatureMeters,
+    );
     return VrUserAnthropometry(
       statureMeters: clampedStature,
       standingEyeHeightMeters:

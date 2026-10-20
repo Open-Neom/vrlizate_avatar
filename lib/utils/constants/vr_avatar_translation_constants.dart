@@ -32,4 +32,16 @@ abstract final class VrAvatarTranslationConstants {
   static const String saved = 'Avatar guardado';
   static const String saveError =
       'No se pudo guardar. Tus cambios siguen disponibles.';
+
+  // Universal Accessibility labels
+  static const String accessibilityTitle = 'Accesibilidad universal y postura';
+  static const String postureAdaptiveAutoLabel = 'Adaptativo automático';
+  static const String postureSeatedWheelchairLabel =
+      'Sentado / Silla de ruedas (elevación visual asistida)';
+  static const String postureStandingRoomscaleLabel = 'De pie / Escala de sala';
+  static const String postureOneHandedReachLabel =
+      'Uso con una sola mano (alcance extendido)';
+  static const String highContrastWireframeLabel =
+      'Contornos de alto contraste para baja visión';
+  static const String colorblindSafePaletteLabel = 'Paleta segura para daltonismo';
 }

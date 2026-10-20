@@ -3,7 +3,9 @@ import 'dart:math' as math;
 import 'package:vector_math/vector_math.dart';
 
 import '../../utils/constants/vr_avatar_constants.dart';
+import '../../utils/enums/vr_accessibility_posture_mode.dart';
 import '../../utils/enums/vr_body_posture_state.dart';
+import '../models/vr_accessibility_profile.dart';
 import '../models/vr_avatar_pose.dart';
 import '../models/vr_camera_landmark_frame.dart';
 import '../models/vr_full_body_kinematic_state.dart';
@@ -20,7 +22,9 @@ import '../models/vr_user_anthropometry.dart';
 ///    ($H_{\text{head}} = H_{\text{joy}} + \Delta H_{\text{head}-\text{joy}}$),
 ///    cross-validated against the Visor Front World Camera (`visorFrontWorld`).
 /// 2. **Head Height ($H_{\text{head}}$) & Posture (`standing`, `walking`, `crouching`, `seated`, `jumping`):**
-///    Tracks physical head elevation relative to the calibrated standing eye height.
+///    Tracks physical head elevation relative to the calibrated standing eye height,
+///    with optional universal accessibility compensation (`seatedWheelchair`
+///    virtual eye-height boost and `oneHandedReach` reach multiplier).
 /// 3. **6DoF Joystick / Arm Kinematics ($\mathbf{p}_{\text{joy}} - \mathbf{p}_{\text{head}}$):**
 ///    Combines the direction ray from Camera 3 (`joystickFrontUpperBody`) with
 ///    the metric ultrasonic range $r_{\text{acoustic}}$ (and monocular visor width)
@@ -31,19 +35,33 @@ import '../models/vr_user_anthropometry.dart';
 class VrTriCameraBodyFusionEngine {
   VrTriCameraBodyFusionEngine({
     double initialStatureMeters = VrAvatarConstants.defaultUserStatureMeters,
+    this.accessibilityProfile = const VrAccessibilityProfile.standard(),
   }) : _anthropometry = VrUserAnthropometry.fromStature(initialStatureMeters),
        _smoothedHeadHeightMeters =
            initialStatureMeters - VrAvatarConstants.eyeToCrownOffsetMeters,
        _smoothedJoystickHeightMeters =
            (initialStatureMeters - VrAvatarConstants.eyeToCrownOffsetMeters) *
-           0.68;
+           VrAvatarConstants.defaultJoystickToEyeHeightRatio;
 
+  VrAccessibilityProfile accessibilityProfile;
   VrUserAnthropometry _anthropometry;
   double _smoothedHeadHeightMeters;
   double _smoothedJoystickHeightMeters;
-  Vector3 _smoothedJoystickRelHead = Vector3(0.0, -0.45, -0.38);
-  Vector3 _smoothedLeftFoot = Vector3(-0.14, 0.0, 0.0);
-  Vector3 _smoothedRightFoot = Vector3(0.14, 0.0, 0.0);
+  Vector3 _smoothedJoystickRelHead = Vector3(
+    0.0,
+    VrAvatarConstants.defaultJoystickRelHeadY,
+    VrAvatarConstants.defaultJoystickRelHeadZ,
+  );
+  Vector3 _smoothedLeftFoot = Vector3(
+    -VrAvatarConstants.defaultFootLateralOffsetMeters,
+    0.0,
+    0.0,
+  );
+  Vector3 _smoothedRightFoot = Vector3(
+    VrAvatarConstants.defaultFootLateralOffsetMeters,
+    0.0,
+    0.0,
+  );
   double _stridePhaseRadians = 0.0;
   int _standingCalibrationSamples = 0;
 
@@ -69,8 +87,14 @@ class VrTriCameraBodyFusionEngine {
     VrUltrasonicRangeSample? ultrasonicRange,
     bool isOneHandedLaserMode = false,
   }) {
-    final dt = dtSeconds.clamp(0.001, 0.25);
-    final blend = (dt * 12.0).clamp(0.08, 1.0);
+    final dt = dtSeconds.clamp(
+      VrAvatarConstants.minFilterDtSeconds,
+      VrAvatarConstants.maxFilterDtSeconds,
+    );
+    final blend = (dt * VrAvatarConstants.filterBlendRateHz).clamp(
+      VrAvatarConstants.minFilterBlendFactor,
+      1.0,
+    );
 
     // -------------------------------------------------------------------------
     // STEP 1: Solve 3D vector between Joystick and Head (Camera 3 + Ultrasonic)
@@ -79,16 +103,20 @@ class VrTriCameraBodyFusionEngine {
     if (ultrasonicRange != null && ultrasonicRange.isValidReach) {
       // Ultrasonic TW-ToF gives high-precision metric distance (±1-2 cm)
       if (joystickFrontUpperBodyFrame?.visorNormalizedWidth != null &&
-          joystickFrontUpperBodyFrame!.visorNormalizedWidth! > 0.03) {
+          joystickFrontUpperBodyFrame!.visorNormalizedWidth! >
+              VrAvatarConstants.minVisorNormalizedWidth) {
         final visualDist = _monocularVisorDistance(joystickFrontUpperBodyFrame);
         // Fuse 80% ultrasonic ToF + 20% visual apparent visor width
         headToJoyDistance =
-            ultrasonicRange.distanceMeters * 0.80 + visualDist * 0.20;
+            ultrasonicRange.distanceMeters *
+                VrAvatarConstants.ultrasonicRangeFusionWeight +
+            visualDist * VrAvatarConstants.visualVisorDistanceFusionWeight;
       } else {
         headToJoyDistance = ultrasonicRange.distanceMeters;
       }
     } else if (joystickFrontUpperBodyFrame?.visorNormalizedWidth != null &&
-        joystickFrontUpperBodyFrame!.visorNormalizedWidth! > 0.03) {
+        joystickFrontUpperBodyFrame!.visorNormalizedWidth! >
+            VrAvatarConstants.minVisorNormalizedWidth) {
       headToJoyDistance = _monocularVisorDistance(joystickFrontUpperBodyFrame);
     }
 
@@ -102,7 +130,7 @@ class VrTriCameraBodyFusionEngine {
       // Vector from Head to Joystick is opposite to rayJoyToHead
       targetJoyRelHead = -rayJoyToHead * headToJoyDistance;
       // Ensure physically plausible vertical & forward quadrant when looking up
-      if (targetJoyRelHead.y > 0.25) {
+      if (targetJoyRelHead.y > VrAvatarConstants.maxJoyAboveHeadFlipThresholdY) {
         targetJoyRelHead.y = -targetJoyRelHead.y.abs();
       }
     } else if (visorFrontWorldFrame != null &&
@@ -121,9 +149,12 @@ class VrTriCameraBodyFusionEngine {
 
     _smoothedJoystickRelHead =
         _smoothedJoystickRelHead * (1.0 - blend) + targetJoyRelHead * blend;
-    final deltaHeadMinusJoyY = (-_smoothedJoystickRelHead.y).clamp(0.05, 0.95);
+    final deltaHeadMinusJoyY = (-_smoothedJoystickRelHead.y).clamp(
+      VrAvatarConstants.minHeadToJoyVerticalMeters,
+      VrAvatarConstants.maxHeadToJoyVerticalMeters,
+    );
     final joyHorizontalForwardDist = math.max(
-      0.18,
+      VrAvatarConstants.minJoyHorizontalForwardMeters,
       math.sqrt(
         _smoothedJoystickRelHead.x * _smoothedJoystickRelHead.x +
             _smoothedJoystickRelHead.z * _smoothedJoystickRelHead.z,
@@ -149,12 +180,13 @@ class VrTriCameraBodyFusionEngine {
         final horizMag = math.sqrt(
           footRay.x * footRay.x + footRay.z * footRay.z,
         );
-        if (footRay.y < -0.12 && horizMag > 1e-4) {
+        if (footRay.y < VrAvatarConstants.minFootDepressionRayY &&
+            horizMag > 1e-4) {
           final tanDepression = (-footRay.y) / horizMag;
           // Horizontal distance from the held controller to the ankle column
           estimatedJoyHeight = (joyHorizontalForwardDist * tanDepression).clamp(
-            0.35,
-            1.55,
+            VrAvatarConstants.minCamera2JoyHeightMeters,
+            VrAvatarConstants.maxCamera2JoyHeightMeters,
           );
           hasCamera2FloorEstimate = true;
         }
@@ -169,20 +201,23 @@ class VrTriCameraBodyFusionEngine {
     double targetHeadHeight;
 
     if (visorFrontWorldFrame?.observedFloorDistanceMeters != null &&
-        visorFrontWorldFrame!.observedFloorDistanceMeters! > 0.45) {
+        visorFrontWorldFrame!.observedFloorDistanceMeters! >
+            VrAvatarConstants.minVisorFloorDistanceMeters) {
       final visorFloorDist = visorFrontWorldFrame.observedFloorDistanceMeters!;
       if (hasCamera2FloorEstimate) {
         // Closed-loop fusion of Camera 1 (Visor->Floor) and Camera 2+3+Ultrasonic chain
-        targetHeadHeight = visorFloorDist * 0.60 + chainHeadHeight * 0.40;
+        targetHeadHeight =
+            visorFloorDist * VrAvatarConstants.visorFloorFusionWeight +
+            chainHeadHeight * VrAvatarConstants.chainFloorFusionWeight;
         estimatedJoyHeight = (targetHeadHeight - deltaHeadMinusJoyY).clamp(
-          0.30,
-          1.55,
+          VrAvatarConstants.minFusedJoyHeightMeters,
+          VrAvatarConstants.maxCamera2JoyHeightMeters,
         );
       } else {
         targetHeadHeight = visorFloorDist;
         estimatedJoyHeight = (targetHeadHeight - deltaHeadMinusJoyY).clamp(
-          0.30,
-          1.55,
+          VrAvatarConstants.minFusedJoyHeightMeters,
+          VrAvatarConstants.maxCamera2JoyHeightMeters,
         );
       }
     } else if (hasCamera2FloorEstimate) {
@@ -207,17 +242,26 @@ class VrTriCameraBodyFusionEngine {
     if (bothFeetGrounded &&
         (hasCamera2FloorEstimate ||
             visorFrontWorldFrame?.observedFloorDistanceMeters != null) &&
-        _smoothedHeadHeightMeters >= 1.15 &&
-        _smoothedHeadHeightMeters <= 2.10 &&
-        verticalHeadVelocity.abs() < 0.15) {
+        _smoothedHeadHeightMeters >=
+            VrAvatarConstants.minCalibrationStandingEyeHeightMeters &&
+        _smoothedHeadHeightMeters <=
+            VrAvatarConstants.maxCalibrationStandingEyeHeightMeters &&
+        verticalHeadVelocity.abs() <
+            VrAvatarConstants.maxCalibrationVerticalVelocityMetersPerSec) {
       if (!_anthropometry.isCalibrated ||
           _smoothedHeadHeightMeters >
-              _anthropometry.standingEyeHeightMeters + 0.02) {
+              _anthropometry.standingEyeHeightMeters +
+                  VrAvatarConstants.calibrationHeightGainMarginMeters) {
         _standingCalibrationSamples++;
-        final conf = (_standingCalibrationSamples / 10.0).clamp(0.25, 1.0);
+        final conf =
+            (_standingCalibrationSamples /
+                    VrAvatarConstants.calibrationTargetSampleCount)
+                .clamp(VrAvatarConstants.minCalibrationConfidence, 1.0);
         final blendedEyeHeight = _anthropometry.isCalibrated
-            ? (_anthropometry.standingEyeHeightMeters * 0.85 +
-                  _smoothedHeadHeightMeters * 0.15)
+            ? (_anthropometry.standingEyeHeightMeters *
+                      VrAvatarConstants.calibratedHeightRetentionWeight +
+                  _smoothedHeadHeightMeters *
+                      VrAvatarConstants.calibratedHeightUpdateWeight)
             : _smoothedHeadHeightMeters;
         _anthropometry = VrUserAnthropometry.fromStandingHeadHeight(
           blendedEyeHeight,
@@ -250,7 +294,7 @@ class VrTriCameraBodyFusionEngine {
             joystickRearFloorFrame.leftFootUv!,
           ),
           grounded: joystickRearFloorFrame.leftFootGrounded,
-          defaultLateralOffset: -0.14,
+          defaultLateralOffset: -VrAvatarConstants.defaultFootLateralOffsetMeters,
         );
       }
       if (joystickRearFloorFrame.rightFootUv != null) {
@@ -261,7 +305,7 @@ class VrTriCameraBodyFusionEngine {
             joystickRearFloorFrame.rightFootUv!,
           ),
           grounded: joystickRearFloorFrame.rightFootGrounded,
-          defaultLateralOffset: 0.14,
+          defaultLateralOffset: VrAvatarConstants.defaultFootLateralOffsetMeters,
         );
       }
     }
@@ -274,9 +318,18 @@ class VrTriCameraBodyFusionEngine {
         _smoothedRightFoot * (1.0 - blend) + rightFootPos * blend;
 
     // Leg swing angles (radians) from anteroposterior foot offset relative to hip
-    final legLen = math.max(0.55, _anthropometry.legLengthMeters);
-    final leftLegSwing = (-_smoothedLeftFoot.z / legLen).clamp(-0.85, 0.85);
-    final rightLegSwing = (-_smoothedRightFoot.z / legLen).clamp(-0.85, 0.85);
+    final legLen = math.max(
+      VrAvatarConstants.minEffectiveLegLengthMeters,
+      _anthropometry.legLengthMeters,
+    );
+    final leftLegSwing = (-_smoothedLeftFoot.z / legLen).clamp(
+      -VrAvatarConstants.maxLegSwingRadians,
+      VrAvatarConstants.maxLegSwingRadians,
+    );
+    final rightLegSwing = (-_smoothedRightFoot.z / legLen).clamp(
+      -VrAvatarConstants.maxLegSwingRadians,
+      VrAvatarConstants.maxLegSwingRadians,
+    );
 
     final footDeltaSpeed =
         ((_smoothedLeftFoot.z - prevLeftZ).abs() +
@@ -285,31 +338,51 @@ class VrTriCameraBodyFusionEngine {
     final isStepping =
         !(joystickRearFloorFrame?.leftFootGrounded ?? true) ||
         !(joystickRearFloorFrame?.rightFootGrounded ?? true) ||
-        (leftLegSwing - rightLegSwing).abs() > 0.16 ||
-        footDeltaSpeed > 0.18;
+        (leftLegSwing - rightLegSwing).abs() >
+            VrAvatarConstants.steppingSwingDiffThresholdRadians ||
+        footDeltaSpeed > VrAvatarConstants.steppingFootSpeedThresholdMetersPerSec;
 
     if (isStepping) {
       _stridePhaseRadians =
-          (_stridePhaseRadians + dt * 5.5) % (2.0 * math.pi);
+          (_stridePhaseRadians +
+              dt * VrAvatarConstants.stridePhaseAngularVelocityRadPerSec) %
+          (2.0 * math.pi);
     }
 
     final forwardWalkSpeed = isStepping
-        ? ((leftLegSwing - rightLegSwing).abs() * 1.6 + footDeltaSpeed * 0.4)
-              .clamp(0.0, 2.4)
+        ? ((leftLegSwing - rightLegSwing).abs() *
+                      VrAvatarConstants.walkSpeedSwingScale +
+                  footDeltaSpeed * VrAvatarConstants.walkSpeedFootVelocityScale)
+              .clamp(0.0, VrAvatarConstants.maxWalkSpeedMetersPerSec)
         : 0.0;
     final locomotionVelocity = Vector3(0.0, 0.0, -forwardWalkSpeed);
 
     // -------------------------------------------------------------------------
-    // STEP 5: Solve Posture State & Arm IK Angles -> VrAvatarPose
+    // STEP 5: Apply Universal Accessibility Compensation & Solve Posture/Arm IK
     // -------------------------------------------------------------------------
+    final effectiveHeadHeightMeters = accessibilityProfile
+        .applyEyeHeightCompensation(_smoothedHeadHeightMeters);
+    final compensatedJoyRelHead = accessibilityProfile.applyReachCompensation(
+      _smoothedJoystickRelHead,
+    );
+    final effectiveOneHanded =
+        isOneHandedLaserMode ||
+        accessibilityProfile.postureMode ==
+            VrAccessibilityPostureMode.oneHandedReach;
+
     final heightRatio =
         _smoothedHeadHeightMeters /
         math.max(1.0, _anthropometry.standingEyeHeightMeters);
 
     final VrBodyPostureState posture;
-    if (_smoothedHeadHeightMeters - _anthropometry.standingEyeHeightMeters >
+    if (accessibilityProfile.postureMode ==
+        VrAccessibilityPostureMode.seatedWheelchair) {
+      posture = VrBodyPostureState.seated;
+    } else if (_smoothedHeadHeightMeters -
+                _anthropometry.standingEyeHeightMeters >
             VrAvatarConstants.jumpHeightDeltaThresholdMeters ||
-        verticalHeadVelocity > 0.65) {
+        verticalHeadVelocity >
+            VrAvatarConstants.jumpVerticalVelocityThresholdMetersPerSec) {
       posture = VrBodyPostureState.jumping;
     } else if (heightRatio <= VrAvatarConstants.seatedHeightRatioThreshold) {
       posture = VrBodyPostureState.seated;
@@ -327,26 +400,47 @@ class VrTriCameraBodyFusionEngine {
                     VrAvatarConstants.seatedHeightRatioThreshold))
             .clamp(0.0, 1.0);
 
-    // Arm flexion & abduction from 3D Joystick position relative to shoulders
-    final shoulderDrop = 0.18 * _anthropometry.statureMeters;
-    final handRelShoulderY = _smoothedJoystickRelHead.y + shoulderDrop;
-    final handForwardDist = math.max(0.05, -_smoothedJoystickRelHead.z);
+    // Arm flexion & abduction from compensated 3D Joystick position relative to shoulders
+    final shoulderDrop =
+        VrAvatarConstants.shoulderDropToStatureRatio *
+        _anthropometry.statureMeters;
+    final handRelShoulderY = compensatedJoyRelHead.y + shoulderDrop;
+    final handForwardDist = math.max(
+      VrAvatarConstants.minHandForwardDistanceMeters,
+      -compensatedJoyRelHead.z,
+    );
     final armElevationAngle =
-        math.atan2(handRelShoulderY, handForwardDist) + (math.pi * 0.38);
-    final clampedFlexion = armElevationAngle.clamp(-0.35, 1.85);
-    final lateralOffset = _smoothedJoystickRelHead.x;
-    final rightAbduction = (lateralOffset * 1.4).clamp(0.04, 1.25);
-    final leftAbduction = isOneHandedLaserMode
-        ? 0.06
-        : (-lateralOffset * 1.4).clamp(0.04, 1.25);
-    final leftFlexion = isOneHandedLaserMode
-        ? (-rightLegSwing * 0.4)
+        math.atan2(handRelShoulderY, handForwardDist) +
+        (math.pi * VrAvatarConstants.armElevationBiasPiFraction);
+    final clampedFlexion = armElevationAngle.clamp(
+      VrAvatarConstants.minArmFlexionRadians,
+      VrAvatarConstants.maxArmFlexionRadians,
+    );
+    final lateralOffset = compensatedJoyRelHead.x;
+    final rightAbduction =
+        (lateralOffset * VrAvatarConstants.armAbductionLateralGain).clamp(
+          VrAvatarConstants.minArmAbductionRadians,
+          VrAvatarConstants.maxArmAbductionRadians,
+        );
+    final leftAbduction = effectiveOneHanded
+        ? VrAvatarConstants.oneHandedIdleLeftAbductionRadians
+        : (-lateralOffset * VrAvatarConstants.armAbductionLateralGain).clamp(
+            VrAvatarConstants.minArmAbductionRadians,
+            VrAvatarConstants.maxArmAbductionRadians,
+          );
+    final leftFlexion = effectiveOneHanded
+        ? (-rightLegSwing * VrAvatarConstants.oneHandedCounterSwingFactor)
         : clampedFlexion;
 
     final avatarPose = VrAvatarPose(
       sit: sitFactor,
-      lean: posture == VrBodyPostureState.crouching ? 0.18 : 0.04,
-      bob: isStepping ? math.sin(_stridePhaseRadians * 2.0).abs() * 0.025 : 0.0,
+      lean: posture == VrBodyPostureState.crouching
+          ? VrAvatarConstants.crouchingLeanRadians
+          : VrAvatarConstants.standingLeanRadians,
+      bob: isStepping
+          ? math.sin(_stridePhaseRadians * 2.0).abs() *
+                VrAvatarConstants.walkingBobAmplitudeMeters
+          : 0.0,
       leftArmFlexion: leftFlexion,
       leftArmAbduction: leftAbduction,
       rightArmFlexion: clampedFlexion,
@@ -356,11 +450,11 @@ class VrTriCameraBodyFusionEngine {
     );
 
     return VrFullBodyKinematicState(
-      headHeightMeters: _smoothedHeadHeightMeters,
+      headHeightMeters: effectiveHeadHeightMeters,
       joystickHeightMeters: _smoothedJoystickHeightMeters,
       headToJoystickVerticalMeters: deltaHeadMinusJoyY,
-      headToJoystickDistanceMeters: _smoothedJoystickRelHead.length,
-      joystickPositionRelativeToHead: _smoothedJoystickRelHead.clone(),
+      headToJoystickDistanceMeters: compensatedJoyRelHead.length,
+      joystickPositionRelativeToHead: compensatedJoyRelHead,
       leftFootPosition: _smoothedLeftFoot.clone(),
       rightFootPosition: _smoothedRightFoot.clone(),
       locomotionVelocity: locomotionVelocity,
@@ -372,7 +466,13 @@ class VrTriCameraBodyFusionEngine {
   }
 
   double _monocularVisorDistance(VrCameraLandmarkFrame frame) {
-    final normWidth = (frame.visorNormalizedWidth ?? 0.25).clamp(0.04, 0.95);
+    final normWidth =
+        (frame.visorNormalizedWidth ??
+                VrAvatarConstants.defaultFallbackVisorNormalizedWidth)
+            .clamp(
+              VrAvatarConstants.minClampedVisorNormalizedWidth,
+              VrAvatarConstants.maxClampedVisorNormalizedWidth,
+            );
     final halfFovTan = math.tan(frame.horizontalFovRadians * 0.5);
     final dist =
         VrAvatarConstants.defaultVisorPhysicalWidthMeters /
@@ -390,21 +490,36 @@ class VrTriCameraBodyFusionEngine {
     required bool grounded,
     required double defaultLateralOffset,
   }) {
-    final footPlaneY = grounded ? 0.0 : 0.08;
-    if (ray.y >= -0.05 || centerRay.y >= -0.05) {
+    final footPlaneY = grounded
+        ? 0.0
+        : VrAvatarConstants.liftedFootPlaneHeightMeters;
+    if (ray.y >= VrAvatarConstants.minGroundProjectionRaySlopeY ||
+        centerRay.y >= VrAvatarConstants.minGroundProjectionRaySlopeY) {
       return Vector3(defaultLateralOffset, footPlaneY, 0.0);
     }
-    final tCenter = ((0.0 - joyWorldPos.y) / centerRay.y).clamp(0.15, 2.50);
+    final tCenter = ((0.0 - joyWorldPos.y) / centerRay.y).clamp(
+      VrAvatarConstants.minFootRayDistanceMeters,
+      VrAvatarConstants.maxFootRayDistanceMeters,
+    );
     final centerHit = joyWorldPos + centerRay * tCenter;
 
-    final tFoot = ((footPlaneY - joyWorldPos.y) / ray.y).clamp(0.15, 2.50);
+    final tFoot = ((footPlaneY - joyWorldPos.y) / ray.y).clamp(
+      VrAvatarConstants.minFootRayDistanceMeters,
+      VrAvatarConstants.maxFootRayDistanceMeters,
+    );
     final footHit = joyWorldPos + ray * tFoot;
     final rel = footHit - centerHit;
 
     return Vector3(
-      rel.x.clamp(-0.65, 0.65),
+      rel.x.clamp(
+        -VrAvatarConstants.maxFootLateralReachMeters,
+        VrAvatarConstants.maxFootLateralReachMeters,
+      ),
       footPlaneY,
-      rel.z.clamp(-0.75, 0.75),
+      rel.z.clamp(
+        -VrAvatarConstants.maxFootForwardReachMeters,
+        VrAvatarConstants.maxFootForwardReachMeters,
+      ),
     );
   }
 }

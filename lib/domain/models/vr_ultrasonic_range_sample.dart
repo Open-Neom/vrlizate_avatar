@@ -7,7 +7,7 @@ class VrUltrasonicRangeSample {
     required this.distanceMeters,
     this.radialVelocityMetersPerSec = 0.0,
     this.roundTripMicros = 0,
-    this.signalToNoiseDb = 24.0,
+    this.signalToNoiseDb = VrAvatarConstants.defaultUltrasonicSnrDb,
     this.ambientTemperatureCelsius =
         VrAvatarConstants.defaultAmbientTemperatureCelsius,
     this.confidence = 1.0,
@@ -37,5 +37,5 @@ class VrUltrasonicRangeSample {
       distanceMeters.isFinite &&
       distanceMeters >= VrAvatarConstants.minValidAcousticDistanceMeters &&
       distanceMeters <= VrAvatarConstants.maxValidAcousticDistanceMeters &&
-      confidence > 0.15;
+      confidence > VrAvatarConstants.minValidAcousticConfidence;
 }

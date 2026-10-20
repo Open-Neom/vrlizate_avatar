@@ -167,5 +167,26 @@ void main() {
       expect(seatedState.postureState, VrBodyPostureState.seated);
       expect(seatedState.avatarPose.sit, greaterThan(0.8));
     });
+
+    test('VrAccessibilityProfile compensates eye elevation and reach in seated/wheelchair mode', () {
+      final seatedEngine = VrTriCameraBodyFusionEngine(
+        initialStatureMeters: 1.72,
+        accessibilityProfile: const VrAccessibilityProfile.seatedOrWheelchair(),
+      );
+
+      final state = seatedEngine.update(
+        dtSeconds: 0.12,
+        visorFrontWorldFrame: VrCameraLandmarkFrame(
+          role: VrCameraStreamRole.visorFrontWorld,
+          cameraOrientation: Quaternion.identity(),
+          observedFloorDistanceMeters: 1.15,
+        ),
+      );
+
+      expect(state.headHeightMeters, greaterThan(1.45));
+      final boostedReach = const VrAccessibilityProfile.oneHanded()
+          .applyReachCompensation(Vector3(0.20, -0.10, -0.35));
+      expect(boostedReach.length, greaterThan(Vector3(0.20, -0.10, -0.35).length));
+    });
   });
 }
