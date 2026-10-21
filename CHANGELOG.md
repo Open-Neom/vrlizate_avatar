@@ -1,8 +1,10 @@
 # Changelog
 
-## 1.0.0
+## 1.0.0 - 2026-10-20
 
 - Promoted `vrlizate_avatar` to stable `1.0.0` following the Open Neom modular directory architecture (`lib/utils/constants/`, `lib/utils/enums/`, `lib/domain/models/`, `lib/domain/services/`, `lib/ui/`).
+- Added Tri-Camera + Ultrasonic ToF Body Pose & Anthropometry Fusion Engine (`VrTriCameraBodyFusionEngine`, `VrUltrasonicTofSolver`, `VrUserAnthropometry`, `VrCameraLandmarkFrame`, `VrFusedBodyKinematics`) combining Visor Front Camera, Joystick Rear Camera (floor & feet), Joystick Front Camera (hands, torso & visor), and 20 kHz Ultrasonic ToF distance ($d_{VJ}$).
+- Added `VrAccessibilityPostureMode` (`adaptiveAuto`, `seatedWheelchair`, `standingRoomscale`, `oneHandedReach`) and `VrAccessibilityProfile` with eye-height and reach compensation for universal accessibility.
 - Split all multi-declaration files into single-declaration files while keeping `lib/src/**` barrel re-exports for backward compatibility.
 - Centralized all UI strings and keys into `VrAvatarConstants` and `VrAvatarTranslationConstants`.
 - Added `VrAvatarEmote` (`neutral`, `wave`, `nod`, `cheer`, `point`, `speaking`) and `VrAvatarEmoteState` for animated head/hand pose offsets and voice-amplitude mouth openness.
