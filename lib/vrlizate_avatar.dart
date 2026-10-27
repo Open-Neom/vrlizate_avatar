@@ -4,6 +4,7 @@ library;
 
 export 'domain/models/vr_accessibility_profile.dart';
 export 'domain/models/vr_avatar_appearance.dart';
+export 'domain/models/vr_avatar_cosmetic.dart';
 export 'domain/models/vr_avatar_emote_state.dart';
 export 'domain/models/vr_avatar_pose.dart';
 export 'domain/models/vr_avatar_preferences.dart';

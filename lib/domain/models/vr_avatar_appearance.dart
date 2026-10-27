@@ -4,6 +4,7 @@ import '../../utils/constants/vr_avatar_constants.dart';
 import '../../utils/enums/vr_avatar_pattern.dart';
 import '../../utils/enums/vr_avatar_species.dart';
 import '../../utils/enums/vr_avatar_style.dart';
+import 'vr_avatar_cosmetic.dart';
 
 /// Public visual description. Height is virtual scale, not physical calibration.
 ///
@@ -20,6 +21,7 @@ class VrAvatarAppearance {
     this.headScale = 1,
     this.featureScale = 1,
     this.pattern = VrAvatarPattern.solid,
+    this.cosmeticId,
   }) : species = species ?? _speciesForStyle(style ?? VrAvatarStyle.explorer) {
     if (style != null && style != this.style) {
       throw ArgumentError.value(
@@ -30,13 +32,25 @@ class VrAvatarAppearance {
     }
     _opaqueColor(bodyColorArgb, VrAvatarConstants.keyBodyColorArgb);
     _opaqueColor(accentColorArgb, VrAvatarConstants.keyAccentColorArgb);
+    if (cosmeticId != null && !VrAvatarCosmeticCatalog.isKnown(cosmeticId!)) {
+      throw ArgumentError.value(
+        cosmeticId,
+        'cosmeticId',
+        'Unknown avatar cosmetic.',
+      );
+    }
     _range(
       heightMeters,
       VrAvatarConstants.keyHeightMeters,
       minHeightMeters,
       maxHeightMeters,
     );
-    _range(headScale, VrAvatarConstants.keyHeadScale, minHeadScale, maxHeadScale);
+    _range(
+      headScale,
+      VrAvatarConstants.keyHeadScale,
+      minHeadScale,
+      maxHeadScale,
+    );
     _range(
       featureScale,
       VrAvatarConstants.keyFeatureScale,
@@ -72,6 +86,10 @@ class VrAvatarAppearance {
   final double featureScale;
   final VrAvatarPattern pattern;
 
+  /// One equipped built-in accessory. Availability is enforced by the host;
+  /// importing a profile or sharing this string never grants a reward.
+  final String? cosmeticId;
+
   /// Lossy compatibility projection for hosts that only know the old styles.
   VrAvatarStyle get style => switch (species) {
     VrAvatarSpecies.robot => VrAvatarStyle.robot,
@@ -88,6 +106,8 @@ class VrAvatarAppearance {
     double? headScale,
     double? featureScale,
     VrAvatarPattern? pattern,
+    String? cosmeticId,
+    bool clearCosmetic = false,
   }) => VrAvatarAppearance(
     style: style,
     species: species ?? (style == null ? this.species : null),
@@ -97,6 +117,7 @@ class VrAvatarAppearance {
     headScale: headScale ?? this.headScale,
     featureScale: featureScale ?? this.featureScale,
     pattern: pattern ?? this.pattern,
+    cosmeticId: clearCosmetic ? null : cosmeticId ?? this.cosmeticId,
   );
 
   Map<String, dynamic> toJson() => {
@@ -108,6 +129,7 @@ class VrAvatarAppearance {
     VrAvatarConstants.keyHeadScale: headScale,
     VrAvatarConstants.keyFeatureScale: featureScale,
     VrAvatarConstants.keyPattern: pattern.name,
+    if (cosmeticId != null) 'cosmeticId': cosmeticId,
   };
 
   factory VrAvatarAppearance.fromJson(Map<String, dynamic> json) {
@@ -117,6 +139,10 @@ class VrAvatarAppearance {
       VrAvatarStyle.values,
     );
     try {
+      final cosmetic = json['cosmeticId'];
+      if (json.containsKey('cosmeticId') && cosmetic is! String) {
+        throw const FormatException('Avatar cosmeticId must be a string.');
+      }
       return VrAvatarAppearance(
         style: style,
         species: json.containsKey(VrAvatarConstants.keySpecies)
@@ -142,6 +168,7 @@ class VrAvatarAppearance {
                 VrAvatarPattern.values,
               )
             : VrAvatarPattern.solid,
+        cosmeticId: cosmetic as String?,
       );
     } on ArgumentError catch (error) {
       throw FormatException(
@@ -159,7 +186,8 @@ class VrAvatarAppearance {
       other.heightMeters == heightMeters &&
       other.headScale == headScale &&
       other.featureScale == featureScale &&
-      other.pattern == pattern;
+      other.pattern == pattern &&
+      other.cosmeticId == cosmeticId;
 
   @override
   int get hashCode => Object.hash(
@@ -170,6 +198,7 @@ class VrAvatarAppearance {
     headScale,
     featureScale,
     pattern,
+    cosmeticId,
   );
 }
 

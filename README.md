@@ -71,3 +71,21 @@ final appearance = VrAvatarAppearance(
 ## Validation
 
 Run `flutter test` and `flutter analyze`.
+
+## Expedition cosmetics
+
+`VrAvatarCosmeticCatalog` supplies four built-in accessories:
+`expedition_canopy`, `expedition_aurora`, `expedition_neon`,
+`expedition_wayfinder`. Equip at most one with
+`appearance.copyWith(cosmeticId: id)`; remove it with
+`copyWith(clearCosmetic: true)`. `cosmeticId` is omitted from JSON when absent,
+so existing profiles keep their representation. Unknown IDs are rejected.
+Both the 2D preview and `vrlizate_scene` avatar renderer draw these accessories
+with existing shapes and materials; no textures, remote URLs or timers are added.
+
+The catalog describes visuals, not ownership. The host must derive availability
+from the current account/profile's persisted expedition, validate asynchronous
+identity changes, and reject equip operations without that reward. A profile or
+share code containing a cosmetic ID does not grant it. In Open Neom this is
+connected by `NeomVrExpeditionRewards` and `VrAvatarRoomPresenter` using the
+existing local passport and avatar store. Species remain freely customizable.

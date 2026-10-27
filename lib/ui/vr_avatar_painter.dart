@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../domain/models/vr_avatar_appearance.dart';
+import '../domain/models/vr_avatar_cosmetic.dart';
 import '../utils/enums/vr_avatar_pattern.dart';
 import '../utils/enums/vr_avatar_species.dart';
 
@@ -124,6 +125,7 @@ class VrAvatarPainter extends CustomPainter {
       oval(const Rect.fromLTWH(103, 87, 7, 7), accent);
       oval(const Rect.fromLTWH(62, 58, 28, 10), light.withValues(alpha: .65));
       canvas.restore();
+      _cosmetic(canvas, body, accent, orb: true);
       return;
     }
 
@@ -246,6 +248,72 @@ class VrAvatarPainter extends CustomPainter {
       }
     }
     canvas.restore();
+    _cosmetic(canvas, body, accent);
+  }
+
+  void _cosmetic(Canvas canvas, Color body, Color accent, {bool orb = false}) {
+    final id = appearance.cosmeticId;
+    if (id == null) return;
+    final paint = Paint()..isAntiAlias = true;
+    final dark = Color.lerp(body, const Color(0xff091c2e), .65)!;
+    final cy = orb ? 116.0 : 109.0;
+    switch (id) {
+      case VrAvatarCosmeticCatalog.canopy:
+        canvas.drawCircle(Offset(82, cy), 9, paint..color = dark);
+        for (final side in [-1.0, 1.0]) {
+          final leaf = Path()
+            ..moveTo(82, cy + 4)
+            ..quadraticBezierTo(82 + side * 13, cy - 2, 82 + side * 6, cy - 8)
+            ..quadraticBezierTo(81, cy - 7, 82, cy + 4)
+            ..close();
+          canvas.drawPath(leaf, paint..color = accent);
+        }
+      case VrAvatarCosmeticCatalog.aurora:
+        paint
+          ..color = accent
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 4;
+        canvas.drawArc(
+          Rect.fromLTWH(52, orb ? 30 : 17, 76, 28),
+          math.pi,
+          math.pi,
+          false,
+          paint,
+        );
+        paint.style = PaintingStyle.fill;
+        for (final x in [52.0, 128.0]) {
+          canvas.drawCircle(Offset(x, orb ? 44 : 31), 4, paint..color = accent);
+        }
+      case VrAvatarCosmeticCatalog.neon:
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromLTWH(132, 88, 8, 28),
+            const Radius.circular(3),
+          ),
+          paint..color = dark,
+        );
+        for (var n = 0; n < 3; n++) {
+          canvas.drawCircle(
+            Offset(136, 82 - n * 6.0),
+            3.2 - n * .4,
+            paint..color = accent,
+          );
+        }
+      case VrAvatarCosmeticCatalog.wayfinder:
+        canvas.drawCircle(Offset(90, cy), 10, paint..color = dark);
+        final compass = Path()
+          ..moveTo(90, cy - 9)
+          ..lineTo(93, cy - 3)
+          ..lineTo(99, cy)
+          ..lineTo(93, cy + 3)
+          ..lineTo(90, cy + 9)
+          ..lineTo(87, cy + 3)
+          ..lineTo(81, cy)
+          ..lineTo(87, cy - 3)
+          ..close();
+        canvas.drawPath(compass, paint..color = accent);
+        canvas.drawCircle(Offset(90, cy), 2, paint..color = Colors.white);
+    }
   }
 
   void _pattern(
